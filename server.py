@@ -1,7 +1,13 @@
 # Import required modules
 import socket  # for communication
 import threading  # for running concurrent thread
+from signal import signal, SIGPIPE, SIG_DFL
 
+signal(SIGPIPE, SIG_DFL)
+
+import key
+
+fernet = key.get_fernet_instance()
 
 HOST = "127.0.0.1"
 PORT = 1234  # you can choose between 0 to 65535
@@ -11,11 +17,12 @@ active_clients = []
 
 def listen_for_messages(connection, username):
     while 1:
-        message = connection.recv(2048).decode("utf-8")
-
+        message_encrypted = connection.recv(2048)
+        message = fernet.decrypt(message_encrypted).decode("utf-8")
         if message != "":
             final_msg = username + "~" + message
-            send_messages_to_all(final_msg)
+            final_msg_encrypted = fernet.encrypt(final_msg.encode()).decode()
+            send_messages_to_all(final_msg_encrypted)
         else:
             print(f"The message from {username} is empty")
             continue
@@ -39,8 +46,9 @@ def client_handler(connection):
         username = connection.recv(2048).decode("utf-8")
         if username != "":
             active_clients.append((username, connection))
-            prompt_message = "SERVER~ " + f"{username} has joined the chat!"
-            send_messages_to_all(prompt_message)
+            prompt_message = "SERVER~" + f"{username} has joined the chat!"
+            prompt_message_encrypted = fernet.encrypt(prompt_message.encode())
+            send_messages_to_all(prompt_message_encrypted.decode())
             break
         else:
             print("Client username is empty!")

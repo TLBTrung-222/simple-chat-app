@@ -2,6 +2,11 @@ import socket
 import threading
 import tkinter as tk
 from tkinter import scrolledtext
+from tkinter import messagebox
+
+import key
+
+fernet = key.get_fernet_instance()
 
 DARK_GREY = "#121212"
 MEDIUM_GREY = "#1F1B24"
@@ -11,19 +16,54 @@ FONT = ("Helvetica", 17)
 BUTTON_FONT = ("Helvetica", 15)
 SMALL_FONT = ("Helvetica", 13)
 
+HOST = "127.0.0.1"
+PORT = 1234  # you can choose between 0 to 65535
+
+# Creating client socket object
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
 
 def add_message(message):
-    message_textbox.config(state=tk.NORMAL)
-    message_textbox.insert(tk.END, message + "\n")
-    message_textbox.config(state=tk.DISABLED)
+    message_box.config(state=tk.NORMAL)
+    message_box.insert(tk.END, message + "\n")
+    message_box.config(state=tk.DISABLED)
 
 
 def connect():
-    print("Button is working")
+    # Connect to the server
+    try:
+        client.connect(
+            (HOST, PORT)
+        )  # now the client represent the connection to server
+        add_message("[SERVER] Sucessfully connected to the server")
+
+    except:
+        messagebox.showerror(
+            "Error while connecting", f"Unable to connect to the server {HOST}:{PORT}"
+        )
+
+    username = username_textbox.get()
+    if username != "":
+        client.sendall(username.encode())
+    else:
+        messagebox.showerror("Invalid user name", "User name can not empty")
+        exit(0)
+
+    threading.Thread(target=listen_for_messages_from_server, args=(client,)).start()
+    username_textbox.config(state=tk.DISABLED)
+    username_button.config(state=tk.DISABLED)
 
 
 def send_message():
-    print("Sending message")
+    message = message_textbox.get()
+    message_encrypted = fernet.encrypt(message.encode())
+
+    if message != "":
+        client.sendall(message_encrypted)
+        message_textbox.delete(0, len(message))
+    else:
+        messagebox.showerror("Empty message", "Message cannot be empty")
+        exit(0)
 
 
 # create the main window object
@@ -53,10 +93,10 @@ username_label.pack(side=tk.LEFT, padx=10)
 username_textbox = tk.Entry(top_frame, font=FONT, bg=MEDIUM_GREY, fg=WHITE, width=23)
 username_textbox.pack(side=tk.LEFT)
 
-user_name = tk.Button(
+username_button = tk.Button(
     top_frame, text="Join", font=BUTTON_FONT, bg=OCEAN_BLUE, command=connect
 )
-user_name.pack(side=tk.LEFT, padx=15)
+username_button.pack(side=tk.LEFT, padx=15)
 
 message_textbox = tk.Entry(bottom_frame, font=FONT, bg=MEDIUM_GREY, fg=WHITE, width=45)
 message_textbox.pack(side=tk.LEFT, padx=10)
@@ -78,60 +118,26 @@ message_box = scrolledtext.ScrolledText(
 )
 message_box.pack(side=tk.TOP)
 
-HOST = "127.0.0.1"
-PORT = 1234  # you can choose between 0 to 65535
-
-
-def send_messages_to_server(client):
-    while 1:
-        message = input("Message: ")
-        if message != "":
-            client.sendall(message.encode())
-        else:
-            print("Empty message!")
-            exit(0)
-
 
 # listen for messages from server
 def listen_for_messages_from_server(client):
     while 1:
-        message = client.recv(2048).decode("utf-8")
+        message_encrypted = client.recv(2048).decode("utf-8")
+        message = fernet.decrypt(message_encrypted).decode()
         if message != "":
-            username, message_content = message.split("~")[0], message.split("~")[1]
-            print(f"[{username}] {message_content}")
+            username, message_content = (
+                message.split("~")[0],
+                message.split("~")[1],
+            )
+            add_message(f"[{username}] {message_content}")
         else:
-            print("Message received from server is empty")
-
-
-def communicate_to_server(client):
-    username = input("Enter user name: ")
-    if username != "":
-        client.sendall(username.encode())
-    else:
-        print("User name can not empty")
-        exit(0)
-
-    threading.Thread(target=listen_for_messages_from_server, args=(client,)).start()
-
-    send_messages_to_server(client)
+            messagebox.showerror(
+                "Reciving message failed", "Message received from server is empty"
+            )
 
 
 def main():
     root.mainloop()
-
-    # Creating client socket object
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-    # Connect to the server
-    try:
-        client.connect(
-            (HOST, PORT)
-        )  # now the client represent the connection to server
-        print("Successfully connect to server")
-        communicate_to_server(client)
-
-    except:
-        print(f"Unable to connect to the server {HOST}:{PORT}")
 
 
 if __name__ == "__main__":
